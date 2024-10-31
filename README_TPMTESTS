@@ -1,0 +1,18 @@
+TPM driver modifications for tests
+==================================
+
+This repository contains changes in the TPM driver in order to make some tests on a tpm_tis-spi and tpm_tis_i2c TPM:
+- FIFO_BUFFER increased to 8kiB to overflow the FIFO
+- Custom commands with the 0xFFFF tag and no additional data:
+  - TPM_TCC_PWR_UP 0x0100 Power-up actions (re-activate interrupts and I2C CSUM)
+  - TPM_TCC_LOCALITY_0 0x0200 Switch to locality 0
+  - TPM_TCC_LOCALITY_1 0x0201 Switch to locality 1
+  - TPM_TCC_LOCALITY_2 0x0202 Switch to locality 2
+  - TPM_TCC_LOCALITY_3 0x0203 Switch to locality 3
+  - TPM_TCC_LOCALITY_4 0x0204 Switch to locality 4
+
+Note: When powered-up, the I2C TPM uses the locality 0 instead of a previously selected one
+
+Must be built with 'tpmtest' in the kernel release name, in order to be detected by the 
+customized TCG proxy running executing the compliance tests
+

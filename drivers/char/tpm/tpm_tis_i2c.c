@@ -30,6 +30,12 @@
 /* Mask to extract the I2C register from TIS register addresses */
 #define TPM_TIS_REGISTER_MASK 0x0FFF
 
+#ifdef TPM_COMPLIANCE_TEST
+/* Mask/shift to extract the I2C locality from TIS register addresses */
+#define TPM_TIS_LOCALITY_MASK 0xF000
+#define TPM_TIS_LOCALITY_SHIFT 12
+#endif
+
 /* Default Guard Time of 250µs until interface capability register is read */
 #define GUARD_TIME_DEFAULT_MIN 250
 #define GUARD_TIME_DEFAULT_MAX 300
@@ -103,6 +109,14 @@ static u8 tpm_tis_i2c_address_to_register(u32 addr)
 		return addr;
 	}
 }
+
+#ifdef TPM_COMPLIANCE_TEST
+static u8 tpm_tis_i2c_address_to_locality(u32 addr)
+{
+	addr &= TPM_TIS_LOCALITY_MASK;
+	return (u8)(addr >>TPM_TIS_LOCALITY_SHIFT);
+}
+#endif
 
 static int tpm_tis_i2c_retry_transfer_until_ack(struct tpm_tis_data *data,
 						struct i2c_msg *msg)
@@ -235,6 +249,21 @@ static int tpm_tis_i2c_write_bytes(struct tpm_tis_data *data, u32 addr, u16 len,
 	if (len > TPM_BUFSIZE - 1)
 		return -EIO;
 
+#ifdef TPM_COMPLIANCE_TEST
+	u8 locality = tpm_tis_i2c_address_to_locality(addr);
+	// Select the locality for some registers
+	if (	reg != TPM_I2C_LOC_SEL && reg != TPM_I2C_INTERFACE_CAPABILITY && reg != TPM_I2C_DEVICE_ADDRESS 
+		&&	reg != TPM_I2C_DATA_CSUM_ENABLE && reg != TPM_DATA_CSUM && reg != TPM_I2C_DID_VID && reg != TPM_I2C_DID_VID
+		&&	locality != data->locality)
+	{
+		//dev_notice(&data->chip->dev, "Use locality %u (data %u)\n", locality, data->locality);
+		ret = tpm_tis_i2c_write_bytes(&phy->priv, TPM_LOC_SEL, sizeof(locality),
+				      &locality, TPM_TIS_PHYS_8);
+		if (ret < 0)
+			return ret;
+	}
+#endif
+
 	phy->io_buf[0] = reg;
 	msg.buf = phy->io_buf;
 	while (wrote < len) {
@@ -321,10 +350,46 @@ static int tpm_tis_i2c_init_guard_time(struct tpm_tis_i2c_phy *phy)
 
 static SIMPLE_DEV_PM_OPS(tpm_tis_pm, tpm_pm_suspend, tpm_tis_resume);
 
+#ifdef TPM_COMPLIANCE_TEST
+static int tpm_tis_i2c_pwr_up(struct tpm_tis_data *data)
+{
+	struct tpm_tis_i2c_phy *phy = to_tpm_tis_i2c_phy(data);
+	const u8 crc_enable = 1;
+	const u8 locality = 0; //(u8)data->locality;
+	int ret;
+
+	dev_notice(&data->chip->dev, "TPM I2C PWR UP - re-enable CSUM\n");
+	// Before executing any command, tpm_chip_start->tpm_request_locality is called, enabling the previously used locality
+	// But in reality it enabled 0 because it is the default one wihout writing TPM_LOC_SEL 
+	data->locality = 0;
+	data->chip->locality = 0;
+	data->chip->test_locality = 0;
+
+	ret = tpm_tis_i2c_init_guard_time(phy);
+	if (ret)
+		return ret;
+
+	ret = tpm_tis_i2c_write_bytes(&phy->priv, TPM_LOC_SEL, sizeof(locality),
+				      &locality, TPM_TIS_PHYS_8);
+	if (ret)
+		return ret;
+
+	ret = tpm_tis_i2c_write_bytes(&phy->priv, TPM_I2C_DATA_CSUM_ENABLE,
+				      sizeof(crc_enable), &crc_enable,
+				      TPM_TIS_PHYS_8);
+	if (ret)
+		return ret;
+	return 0;
+}
+#endif
+
 static const struct tpm_tis_phy_ops tpm_i2c_phy_ops = {
 	.read_bytes = tpm_tis_i2c_read_bytes,
 	.write_bytes = tpm_tis_i2c_write_bytes,
 	.verify_crc = tpm_tis_i2c_verify_crc,
+#ifdef TPM_COMPLIANCE_TEST
+	.power_up = tpm_tis_i2c_pwr_up,
+#endif
 };
 
 static int tpm_tis_i2c_probe(struct i2c_client *dev)

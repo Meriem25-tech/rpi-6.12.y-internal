@@ -25,6 +25,8 @@
 #include <crypto/hash_info.h>
 #include <crypto/aes.h>
 
+#define TPM_COMPLIANCE_TEST /* Mode for compliance tests */
+
 #define TPM_DIGEST_SIZE 20	/* Max TPM v1.2 PCR size */
 
 #define TPM2_MAX_DIGEST_SIZE	SHA512_DIGEST_SIZE
@@ -102,6 +104,9 @@ struct tpm_class_ops {
 	int (*request_locality)(struct tpm_chip *chip, int loc);
 	int (*relinquish_locality)(struct tpm_chip *chip, int loc);
 	void (*clk_enable)(struct tpm_chip *chip, bool value);
+#ifdef TPM_COMPLIANCE_TEST
+	int (*test_cmd)(struct tpm_chip *chip, int command);
+#endif
 };
 
 #define TPM_NUM_EVENT_LOG_FILES		3
@@ -112,6 +117,9 @@ enum tpm_duration {
 	TPM_MEDIUM = 1,
 	TPM_LONG = 2,
 	TPM_LONG_LONG = 3,
+#ifdef TPM_COMPLIANCE_TEST
+	TPM_LONGER = 4,
+#endif
 	TPM_UNDEFINED,
 	TPM_NUM_DURATIONS = TPM_UNDEFINED,
 };
@@ -205,6 +213,7 @@ struct tpm_chip {
 	/* active locality */
 	int locality;
 
+
 #ifdef CONFIG_TCG_TPM2_HMAC
 	/* details for communication security via sessions */
 
@@ -215,6 +224,12 @@ struct tpm_chip {
 	u8 null_ec_key_x[EC_PT_SZ];
 	u8 null_ec_key_y[EC_PT_SZ];
 	struct tpm2_auth *auth;
+#endif 
+#ifdef TPM_COMPLIANCE_TEST
+	/* locality to use, set by test commands */
+	int test_locality;
+	/* power up flag, to re-enable the IRQ*/
+	bool pwr_up;
 #endif
 };
 
