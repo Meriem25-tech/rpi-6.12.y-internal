@@ -15,6 +15,7 @@
  * This device driver implements the TPM interface as defined in
  * the TCG TPM Interface Spec version 1.2, revision 1.0.
  */
+#define DEBUG
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -31,6 +32,9 @@
 #define TPM_TIS_MAX_UNHANDLED_IRQS	1000
 
 static void tpm_tis_clkrun_enable(struct tpm_chip *chip, bool value);
+#if defined(CONFIG_PM_SLEEP) || defined(TPM_COMPLIANCE_TEST)
+static void tpm_tis_reenable_interrupts(struct tpm_chip *chip);
+#endif
 
 static bool wait_for_tpm_stat_cond(struct tpm_chip *chip, u8 mask,
 					bool check_cancel, bool *canceled)
@@ -169,7 +173,9 @@ static bool check_locality(struct tpm_chip *chip, int l)
 
 static int __tpm_tis_relinquish_locality(struct tpm_tis_data *priv, int l)
 {
-	tpm_tis_write8(priv, TPM_ACCESS(l), TPM_ACCESS_ACTIVE_LOCALITY);
+	int rc = tpm_tis_write8(priv, TPM_ACCESS(l), TPM_ACCESS_ACTIVE_LOCALITY);
+	if (rc < 0)
+		return rc;
 
 	return 0;
 }
@@ -179,7 +185,9 @@ static int tpm_tis_relinquish_locality(struct tpm_chip *chip, int l)
 	struct tpm_tis_data *priv = dev_get_drvdata(&chip->dev);
 
 	mutex_lock(&priv->locality_count_mutex);
-	priv->locality_count--;
+	//dev_notice(&chip->dev, "Relinquish locality %d, count %u\n", l, priv->locality_count);
+	if (priv->locality_count > 0)
+		priv->locality_count--;
 	if (priv->locality_count == 0)
 		__tpm_tis_relinquish_locality(priv, l);
 	mutex_unlock(&priv->locality_count_mutex);
@@ -231,14 +239,25 @@ again:
 static int tpm_tis_request_locality(struct tpm_chip *chip, int l)
 {
 	struct tpm_tis_data *priv = dev_get_drvdata(&chip->dev);
-	int ret = 0;
+	int ret = l;
 
 	mutex_lock(&priv->locality_count_mutex);
+	dev_notice(&chip->dev, "Request locality %d, count %u\n", l, priv->locality_count);
 	if (priv->locality_count == 0)
 		ret = __tpm_tis_request_locality(chip, l);
-	if (!ret)
+	if (ret == l)
 		priv->locality_count++;
 	mutex_unlock(&priv->locality_count_mutex);
+
+#ifdef TPM_COMPLIANCE_TEST
+	if (	chip->pwr_up
+		&&	chip->flags & TPM_CHIP_FLAG_IRQ)
+	{
+		dev_notice(&chip->dev, "Re-enable IRQ after power-up");
+		tpm_tis_reenable_interrupts(chip);
+		chip->pwr_up = false;
+	}
+#endif
 	return ret;
 }
 
@@ -754,7 +773,11 @@ static int probe_itpm(struct tpm_chip *chip)
 	if (vendor != TPM_VID_INTEL)
 		return 0;
 
+#ifdef TPM_COMPLIANCE_TEST
+	if (tpm_tis_request_locality(chip, chip->test_locality) != 0)
+#else
 	if (tpm_tis_request_locality(chip, 0) != 0)
+#endif
 		return -EBUSY;
 
 	rc = tpm_tis_send_data(chip, cmd_getticks, len);
@@ -818,11 +841,19 @@ static irqreturn_t tpm_tis_revert_interrupts(struct tpm_chip *chip)
 		dev_info(&chip->dev, "\tDMI_PRODUCT_VERSION: %s\n", product);
 	}
 
+#ifdef TPM_COMPLIANCE_TEST
+	if (tpm_tis_request_locality(chip, chip->test_locality) != 0)
+#else
 	if (tpm_tis_request_locality(chip, 0) != 0)
+#endif
 		return IRQ_NONE;
 
 	__tpm_tis_disable_interrupts(chip);
+#ifdef TPM_COMPLIANCE_TEST
+	tpm_tis_relinquish_locality(chip, chip->test_locality);
+#else
 	tpm_tis_relinquish_locality(chip, 0);
+#endif
 
 	schedule_work(&priv->free_irq_work);
 
@@ -874,9 +905,17 @@ static irqreturn_t tis_int_handler(int dummy, void *dev_id)
 		wake_up_interruptible(&priv->int_queue);
 
 	/* Clear interrupts handled with TPM_EOI */
+#ifdef TPM_COMPLIANCE_TEST
+	tpm_tis_request_locality(chip, chip->test_locality);
+#else
 	tpm_tis_request_locality(chip, 0);
+#endif
 	rc = tpm_tis_write32(priv, TPM_INT_STATUS(priv->locality), interrupt);
+#ifdef TPM_COMPLIANCE_TEST
+	tpm_tis_relinquish_locality(chip, chip->test_locality);
+#else
 	tpm_tis_relinquish_locality(chip, 0);
+#endif
 	if (rc < 0)
 		goto err;
 
@@ -936,7 +975,11 @@ static int tpm_tis_probe_irq_single(struct tpm_chip *chip, u32 intmask,
 	}
 	priv->irq = irq;
 
+#ifdef TPM_COMPLIANCE_TEST
+	rc = tpm_tis_request_locality(chip, chip->test_locality);
+#else
 	rc = tpm_tis_request_locality(chip, 0);
+#endif
 	if (rc < 0)
 		return rc;
 
@@ -1085,6 +1128,33 @@ static void tpm_tis_clkrun_enable(struct tpm_chip *chip, bool value)
 	outb(0xCC, 0x80);
 #endif
 }
+#ifdef TPM_COMPLIANCE_TEST
+static int tpm_tis_test_cmd(struct tpm_chip *chip, int command)
+{
+	int ret;
+	struct tpm_tis_data *priv = dev_get_drvdata(&chip->dev);
+
+	switch(command)
+	{
+		case TPM_TCC_PWR_UP:
+		{
+			dev_notice(&chip->dev, "%s TPM_TCC_PWR_UP", __func__);
+			if (!priv->phy_ops->power_up)
+				return -ENOTSUPP;
+
+			/* Specific power-up actions for the physical interface */
+			ret = priv->phy_ops->power_up(priv);
+			if (ret)
+				return ret;
+			return 0;
+		}
+		default:
+			dev_err(&chip->dev, "Unsupported command %d", command);
+			break;
+	}
+	return -ENOTSUPP;
+}
+#endif
 
 static const struct tpm_class_ops tpm_tis = {
 	.flags = TPM_OPS_AUTO_STARTUP,
@@ -1100,6 +1170,9 @@ static const struct tpm_class_ops tpm_tis = {
 	.request_locality = tpm_tis_request_locality,
 	.relinquish_locality = tpm_tis_relinquish_locality,
 	.clk_enable = tpm_tis_clkrun_enable,
+#ifdef TPM_COMPLIANCE_TEST
+	.test_cmd = tpm_tis_test_cmd,
+#endif
 };
 
 int tpm_tis_core_init(struct device *dev, struct tpm_tis_data *priv, int irq,
@@ -1216,15 +1289,18 @@ int tpm_tis_core_init(struct device *dev, struct tpm_tis_data *priv, int irq,
 	}
 
 	intmask &= ~TPM_GLOBAL_INT_ENABLE;
-
+#ifdef TPM_COMPLIANCE_TEST
+	rc = tpm_tis_request_locality(chip, chip->test_locality);
+#else
 	rc = tpm_tis_request_locality(chip, 0);
+#endif
 	if (rc < 0) {
 		rc = -ENODEV;
 		goto out_err;
 	}
 
 	tpm_tis_write32(priv, TPM_INT_ENABLE(priv->locality), intmask);
-	tpm_tis_relinquish_locality(chip, 0);
+	tpm_tis_relinquish_locality(chip, priv->locality);
 
 	rc = tpm_chip_start(chip);
 	if (rc)
@@ -1262,14 +1338,17 @@ int tpm_tis_core_init(struct device *dev, struct tpm_tis_data *priv, int irq,
 		 * to make sure it works. May as well use that command to set the
 		 * proper timeouts for the driver.
 		 */
-
+	#ifdef TPM_COMPLIANCE_TEST
+		rc = tpm_tis_request_locality(chip, chip->test_locality);
+	#else
 		rc = tpm_tis_request_locality(chip, 0);
+	#endif
 		if (rc < 0)
 			goto out_err;
 
 		rc = tpm_get_timeouts(chip);
 
-		tpm_tis_relinquish_locality(chip, 0);
+		tpm_tis_relinquish_locality(chip, priv->locality);
 
 		if (rc) {
 			dev_err(dev, "Could not get TPM timeouts and durations\n");
@@ -1288,12 +1367,15 @@ int tpm_tis_core_init(struct device *dev, struct tpm_tis_data *priv, int irq,
 		} else {
 			dev_err(&chip->dev, FW_BUG
 					"TPM interrupt not working, polling instead\n");
-
+#ifdef TPM_COMPLIANCE_TEST
+			rc = tpm_tis_request_locality(chip, chip->test_locality);
+#else
 			rc = tpm_tis_request_locality(chip, 0);
+#endif
 			if (rc < 0)
 				goto out_err;
 			tpm_tis_disable_interrupts(chip);
-			tpm_tis_relinquish_locality(chip, 0);
+			tpm_tis_relinquish_locality(chip, priv->locality);
 		}
 	}
 
@@ -1315,7 +1397,7 @@ out_err:
 }
 EXPORT_SYMBOL_GPL(tpm_tis_core_init);
 
-#ifdef CONFIG_PM_SLEEP
+#if defined(CONFIG_PM_SLEEP) || defined(TPM_COMPLIANCE_TEST)
 static void tpm_tis_reenable_interrupts(struct tpm_chip *chip)
 {
 	struct tpm_tis_data *priv = dev_get_drvdata(&chip->dev);

@@ -257,9 +257,20 @@ int tpm_tis_spi_init(struct spi_device *spi, struct tpm_tis_spi_phy *phy,
 	return tpm_tis_core_init(&spi->dev, &phy->priv, irq, phy_ops, NULL);
 }
 
+#ifdef TPM_COMPLIANCE_TEST
+static int tpm_tis_spi_pwr_up(struct tpm_tis_data *data)
+{
+	dev_notice(&data->chip->dev, "TPM SPI PWR UP - nothing to do\n");
+	return 0;
+}
+#endif
+
 static const struct tpm_tis_phy_ops tpm_spi_phy_ops = {
 	.read_bytes = tpm_tis_spi_read_bytes,
 	.write_bytes = tpm_tis_spi_write_bytes,
+#ifdef TPM_COMPLIANCE_TEST
+	.power_up = tpm_tis_spi_pwr_up,
+#endif
 };
 
 static int tpm_tis_spi_probe(struct spi_device *dev)
@@ -282,6 +293,7 @@ static int tpm_tis_spi_probe(struct spi_device *dev)
 		irq = dev->irq;
 	else
 		irq = -1;
+	dev_notice(&dev->dev, "TPM SPI probe, IRQ %d\n", irq);
 
 	init_completion(&phy->ready);
 	return tpm_tis_spi_init(dev, phy, irq, &tpm_spi_phy_ops);

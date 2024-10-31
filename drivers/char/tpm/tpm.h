@@ -32,9 +32,25 @@
 #endif
 
 #define TPM_MINOR		224	/* officially assigned */
-#define TPM_BUFSIZE		4096
 #define TPM_NUM_DEVICES		65536
 #define TPM_RETRY		50
+
+#ifdef TPM_COMPLIANCE_TEST
+	#define TPM_BUFSIZE		4096*2
+	#define TPM_COMPLIANCE_TAG 0xFFFF
+	enum tpm_test_command_codes {
+		TPM_TCC_PWR_UP		= 0x0100, /* Power-up actions */
+		TPM_TCC_LOCALITY_0	= 0x0200, /* Switch to locality 0 */
+		TPM_TCC_LOCALITY_1	= 0x0201, /* Switch to locality 1 */
+		TPM_TCC_LOCALITY_2	= 0x0202, /* Switch to locality 2 */
+		TPM_TCC_LOCALITY_3	= 0x0203, /* Switch to locality 3 */
+		TPM_TCC_LOCALITY_4	= 0x0204, /* Switch to locality 4 */
+	};
+
+	ssize_t tpm_chip_test_cmd(struct tpm_chip *chip, u8 *buf, size_t bufsiz);
+#else
+	#define TPM_BUFSIZE		4096
+#endif
 
 enum tpm_timeout {
 	TPM_TIMEOUT = 5,	/* msecs */

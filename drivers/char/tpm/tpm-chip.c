@@ -37,14 +37,23 @@ const struct class tpmrm_class = {
 };
 dev_t tpm_devt;
 
+#ifdef TPM_COMPLIANCE_TEST
+static int tpm_request_locality(struct tpm_chip *chip, int l)
+#else
 static int tpm_request_locality(struct tpm_chip *chip)
+#endif
 {
 	int rc;
 
 	if (!chip->ops->request_locality)
+	{
 		return 0;
-
+	}
+#ifdef TPM_COMPLIANCE_TEST
+	rc = chip->ops->request_locality(chip, l);
+#else
 	rc = chip->ops->request_locality(chip, 0);
+#endif
 	if (rc < 0)
 		return rc;
 
@@ -109,7 +118,11 @@ int tpm_chip_start(struct tpm_chip *chip)
 	tpm_clk_enable(chip);
 
 	if (chip->locality == -1) {
+#ifdef TPM_COMPLIANCE_TEST
+		ret = tpm_request_locality(chip, chip->test_locality);
+#else
 		ret = tpm_request_locality(chip);
+#endif
 		if (ret) {
 			tpm_clk_disable(chip);
 			return ret;
@@ -379,6 +392,10 @@ struct tpm_chip *tpm_chip_alloc(struct device *pdev,
 	}
 
 	chip->locality = -1;
+#ifdef TPM_COMPLIANCE_TEST
+	chip->test_locality = 0;
+	chip->pwr_up = false;
+#endif
 	return chip;
 
 out:
@@ -694,3 +711,77 @@ void tpm_chip_unregister(struct tpm_chip *chip)
 	tpm_del_char_device(chip);
 }
 EXPORT_SYMBOL_GPL(tpm_chip_unregister);
+
+#ifdef TPM_COMPLIANCE_TEST
+/**
+ * tpm_chip_test_cmd - Handle commands for TPM Compliance tests.
+ * @chip:	a TPM chip to use
+ * @buf:	a TPM command buffer
+ * @bufsiz:	length of the TPM command buffer
+ *
+ * This does not sends a command to the TPM but performs custom actions in the driver
+ *
+ * Return:
+ * * The response length	- OK
+ * * -errno			- A system error
+ */
+ssize_t tpm_chip_test_cmd(struct tpm_chip *chip, u8 *buf, size_t bufsiz)
+{
+	struct tpm_header *header = (struct tpm_header *)buf;
+	int rc;
+
+	if (	(be16_to_cpu(header->tag) != TPM_COMPLIANCE_TAG)
+		||	(be32_to_cpu(header->length) !=sizeof(*header)))
+	{
+		dev_err(&chip->dev, "invalid format");
+		goto return_error;
+	}
+
+	dev_notice(&chip->dev, "%s '%.2x%.2x %.2x%.2x%.2x%.2x %.2x%.2x%.2x%.2x'", __func__, 
+		buf[0],buf[1],buf[2],buf[3],buf[4],buf[5],buf[6],buf[7],buf[8],buf[9]);
+
+	int command = be32_to_cpu(header->ordinal);
+	switch(command)
+	{
+		case TPM_TCC_LOCALITY_0: 
+		case TPM_TCC_LOCALITY_1:
+		case TPM_TCC_LOCALITY_2:
+		case TPM_TCC_LOCALITY_3:
+		case TPM_TCC_LOCALITY_4:
+		{
+			int loc = command&0xFF;
+			/* test_localiy is used when requesting localities instead of the default 0 */
+			chip->test_locality = loc;
+			dev_notice(&chip->dev, "%s change locality %d -> %d\n", __func__,
+				chip->locality, chip->test_locality);
+			break;
+		}
+		case TPM_TCC_PWR_UP:
+		{
+			chip->pwr_up = true;
+			rc = chip->ops->test_cmd(chip, command);
+			if(rc)
+			{
+				dev_err(&chip->dev, "%s(%x) error %d\n", __func__, command, rc);
+				goto return_error;
+			}
+			break;
+		}
+		default:
+			dev_err(&chip->dev, "%s unknown command %d", __func__, command);
+			goto return_error;
+	}
+
+	header->length = cpu_to_be32(sizeof(*header));
+	header->tag = cpu_to_be16(TPM2_ST_NO_SESSIONS);
+	header->return_code = cpu_to_be32(TPM2_RC_SUCCESS);
+	return sizeof(*header);
+
+return_error:
+	header->length = cpu_to_be32(sizeof(*header));
+	header->tag = cpu_to_be16(TPM2_ST_NO_SESSIONS);
+	header->return_code = cpu_to_be32(TPM2_RC_COMMAND_CODE |
+						TSS2_RESMGR_TPM_RC_LAYER);
+	return sizeof(*header);
+}
+#endif //TPM_COMPLIANCE_TEST

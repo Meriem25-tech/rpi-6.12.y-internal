@@ -46,6 +46,10 @@ int tpm2_get_timeouts(struct tpm_chip *chip)
 	chip->duration[TPM_LONG_LONG] =
 		msecs_to_jiffies(TPM2_DURATION_LONG_LONG);
 
+#ifdef TPM_COMPLIANCE_TEST
+	/* Longer timeout for self tests on emulator */
+	chip->duration[TPM_LONGER] = msecs_to_jiffies(4000);
+#endif
 	chip->flags |= TPM_CHIP_FLAG_HAVE_TIMEOUTS;
 
 	return 0;
@@ -79,7 +83,12 @@ static u8 tpm2_ordinal_duration_index(u32 ordinal)
 		return TPM_MEDIUM;
 
 	case TPM2_CC_SELF_TEST:               /* 143 */
+#ifdef TPM_COMPLIANCE_TEST
+		printk(KERN_WARNING "Longer Self-Tests timeout (4s) for TPM emulator");
+		return TPM_LONGER;
+#else
 		return TPM_LONG;
+#endif
 
 	case TPM2_CC_GET_RANDOM:              /* 17B */
 		return TPM_LONG;

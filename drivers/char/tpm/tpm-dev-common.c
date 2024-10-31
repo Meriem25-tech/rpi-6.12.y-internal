@@ -27,8 +27,21 @@ static ssize_t tpm_dev_transmit(struct tpm_chip *chip, struct tpm_space *space,
 	struct tpm_header *header = (void *)buf;
 	ssize_t ret, len;
 
+
 	if (chip->flags & TPM_CHIP_FLAG_TPM2)
 		tpm2_end_auth_session(chip);
+
+
+	/*(&chip->dev, "%s '%.2x%.2x %.2x%.2x%.2x%.2x %.2x%.2x%.2x%.2x'", __func__, 
+		buf[0],buf[1],buf[2],buf[3],buf[4],buf[5],buf[6],buf[7],buf[8],buf[9]);*/
+#ifdef TPM_COMPLIANCE_TEST
+	// Handle the custom commands for compliance tests
+	if (be16_to_cpu(header->tag) == TPM_COMPLIANCE_TAG)
+	{
+		ret = tpm_chip_test_cmd(chip, buf, bufsiz);
+		goto out_rc;
+	}
+#endif
 
 	ret = tpm2_prepare_space(chip, space, buf, bufsiz);
 	/* If the command is not implemented by the TPM, synthesize a
@@ -54,6 +67,8 @@ static ssize_t tpm_dev_transmit(struct tpm_chip *chip, struct tpm_space *space,
 		tpm2_flush_space(chip);
 
 out_rc:
+	/*dev_notice(&chip->dev, "%s ret %zu len %zu '%.2x%.2x %.2x%.2x%.2x%.2x %.2x%.2x%.2x%.2x'", __func__, ret, len,
+		buf[0],buf[1],buf[2],buf[3],buf[4],buf[5],buf[6],buf[7],buf[8],buf[9]);*/
 	return ret ? ret : len;
 }
 
