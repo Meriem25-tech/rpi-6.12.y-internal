@@ -242,7 +242,7 @@ static int tpm_tis_request_locality(struct tpm_chip *chip, int l)
 	int ret = l;
 
 	mutex_lock(&priv->locality_count_mutex);
-	dev_notice(&chip->dev, "Request locality %d, count %u\n", l, priv->locality_count);
+	//dev_notice(&chip->dev, "Request locality %d, count %u\n", l, priv->locality_count);
 	if (priv->locality_count == 0)
 		ret = __tpm_tis_request_locality(chip, l);
 	if (ret == l)
@@ -1129,7 +1129,7 @@ static void tpm_tis_clkrun_enable(struct tpm_chip *chip, bool value)
 #endif
 }
 #ifdef TPM_COMPLIANCE_TEST
-static int tpm_tis_test_cmd(struct tpm_chip *chip, int command)
+static int tpm_tis_test_cmd(struct tpm_chip *chip, int command, u8 *buf, size_t len)
 {
 	int ret;
 	struct tpm_tis_data *priv = dev_get_drvdata(&chip->dev);
@@ -1148,8 +1148,43 @@ static int tpm_tis_test_cmd(struct tpm_chip *chip, int command)
 				return ret;
 			return 0;
 		}
+		case TPM_TCC_HASH_START:
+		{
+			dev_notice(&chip->dev, "TPM_TCC_HASH_START\n");
+			priv->tpm_hash_in_progress = 1;
+			ret = tpm_tis_write8(priv, TPM_HASH_START, 0x55);
+			if (ret < 0)
+				return ret;
+			return 0;
+		}
+		case TPM_TCC_HASH_DATA:
+		{
+			dev_notice(&chip->dev, "TPM_TCC_HASH_DATA len %zu\n", len);
+			priv->tpm_hash_in_progress = 1;
+			int transfersize = 8; // TPM_INTF_CAPABILITY.DataTransferSizeSupport
+			size_t count = 0;
+			while (count < len) {
+				transfersize = min_t(int, transfersize, len - count);
+				ret = tpm_tis_write_bytes(priv, TPM_DATA_FIFO(priv->locality),
+							transfersize, buf + count);
+				if (ret < 0)
+					return ret;
+				count += transfersize;
+			}
+			return 0;
+		}
+		case TPM_TCC_HASH_END:
+		{
+			dev_notice(&chip->dev, "TPM_TCC_HASH_END\n");
+			priv->tpm_hash_in_progress = 1;
+			ret = tpm_tis_write8(priv, TPM_HASH_END, 0x55);
+			priv->tpm_hash_in_progress = 0;
+			if (ret < 0)
+				return ret;
+			return 0;
+		}
 		default:
-			dev_err(&chip->dev, "Unsupported command %d", command);
+			dev_err(&chip->dev, "Unsupported command %d\n", command);
 			break;
 	}
 	return -ENOTSUPP;
@@ -1209,6 +1244,9 @@ int tpm_tis_core_init(struct device *dev, struct tpm_tis_data *priv, int irq,
 	priv->locality_count = 0;
 	mutex_init(&priv->locality_count_mutex);
 	INIT_WORK(&priv->free_irq_work, tpm_tis_free_irq_func);
+#ifdef TPM_COMPLIANCE_TEST
+	priv->tpm_hash_in_progress = 0;
+#endif
 
 	dev_set_drvdata(&chip->dev, priv);
 

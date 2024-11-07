@@ -51,10 +51,18 @@ static int tpm_tis_spi_flow_control(struct tpm_tis_spi_phy *phy,
 {
 	struct spi_message m;
 	int ret, i;
+	int max_loop = TPM_RETRY;
+
+#ifdef TPM_COMPLIANCE_TEST
+	if (phy->priv.tpm_hash_in_progress)
+	{
+		max_loop = 750;
+	}
+#endif
 
 	if ((phy->iobuf[3] & 0x01) == 0) {
 		// handle SPI wait states
-		for (i = 0; i < TPM_RETRY; i++) {
+		for (i = 0; i < max_loop; i++) {
 			spi_xfer->len = 1;
 			spi_message_init(&m);
 			spi_message_add_tail(spi_xfer, &m);
@@ -63,6 +71,14 @@ static int tpm_tis_spi_flow_control(struct tpm_tis_spi_phy *phy,
 				return ret;
 			if (phy->iobuf[0] & 0x01)
 				break;
+#ifdef TPM_COMPLIANCE_TEST
+			if (phy->priv.tpm_hash_in_progress && i > TPM_RETRY)
+			{
+				// After the normal retry loop, add a small delay if a hash is in progress.
+				// The maximum hash commands timeout is 750ms
+				tpm_msleep(1);
+			}
+#endif
 		}
 
 		if (i == TPM_RETRY)

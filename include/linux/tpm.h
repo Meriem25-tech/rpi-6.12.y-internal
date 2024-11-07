@@ -104,7 +104,7 @@ struct tpm_class_ops {
 	int (*relinquish_locality)(struct tpm_chip *chip, int loc);
 	void (*clk_enable)(struct tpm_chip *chip, bool value);
 #ifdef TPM_COMPLIANCE_TEST
-	int (*test_cmd)(struct tpm_chip *chip, int command);
+	int (*test_cmd)(struct tpm_chip *chip, int command, u8 *buf, size_t len);
 #endif
 };
 

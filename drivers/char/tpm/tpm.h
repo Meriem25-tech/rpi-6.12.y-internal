@@ -45,6 +45,9 @@
 		TPM_TCC_LOCALITY_2	= 0x0202, /* Switch to locality 2 */
 		TPM_TCC_LOCALITY_3	= 0x0203, /* Switch to locality 3 */
 		TPM_TCC_LOCALITY_4	= 0x0204, /* Switch to locality 4 */
+		TPM_TCC_HASH_START  = 0x0300, /* TPM_TCC_HASH_START (locality 4 must be active) */
+		TPM_TCC_HASH_DATA   = 0x0301, /* TPM_TCC_HASH_DATA (locality 4 must be active) */
+		TPM_TCC_HASH_END    = 0x0302, /* TPM_TCC_HASH_END (locality 4 must be active) */
 	};
 
 	ssize_t tpm_chip_test_cmd(struct tpm_chip *chip, u8 *buf, size_t bufsiz);
