@@ -731,7 +731,7 @@ ssize_t tpm_chip_test_cmd(struct tpm_chip *chip, u8 *buf, size_t bufsiz)
 	int rc;
 
 	if (	(be16_to_cpu(header->tag) != TPM_COMPLIANCE_TAG)
-		||	(be32_to_cpu(header->length) !=sizeof(*header)))
+		||	(be32_to_cpu(header->length) < sizeof(*header)))
 	{
 		dev_err(&chip->dev, "invalid format");
 		goto return_error;
@@ -752,14 +752,46 @@ ssize_t tpm_chip_test_cmd(struct tpm_chip *chip, u8 *buf, size_t bufsiz)
 			int loc = command&0xFF;
 			/* test_localiy is used when requesting localities instead of the default 0 */
 			chip->test_locality = loc;
-			dev_notice(&chip->dev, "%s change locality %d -> %d\n", __func__,
-				chip->locality, chip->test_locality);
+			if (chip->locality != chip->test_locality)
+			{
+				dev_notice(&chip->dev, "Change locality %d -> %d\n",
+					chip->locality, chip->test_locality);
+			}
 			break;
 		}
 		case TPM_TCC_PWR_UP:
 		{
 			chip->pwr_up = true;
-			rc = chip->ops->test_cmd(chip, command);
+			rc = chip->ops->test_cmd(chip, command, NULL, 0);
+			if(rc)
+			{
+				dev_err(&chip->dev, "%s(%x) error %d\n", __func__, command, rc);
+				goto return_error;
+			}
+			break;
+		}
+		case TPM_TCC_HASH_START:
+		case TPM_TCC_HASH_END:
+		{
+			rc = chip->ops->test_cmd(chip, command, NULL, 0);
+			if(rc)
+			{
+				dev_err(&chip->dev, "%s(%x) error %d\n", __func__, command, rc);
+				goto return_error;
+			}
+			break;
+		}
+		case TPM_TCC_HASH_DATA:
+		{
+			// Send the data after the header to the TPM_HASH_DATA register
+			size_t len = be32_to_cpu(header->length);
+			if (len < TPM_HEADER_SIZE)
+			{
+				dev_err(&chip->dev, "%s TPM_HASH_DATA too small (%zu)\n", __func__, len);
+				goto return_error;
+			}
+			len -= TPM_HEADER_SIZE;
+			rc = chip->ops->test_cmd(chip, command, buf+TPM_HEADER_SIZE, len);
 			if(rc)
 			{
 				dev_err(&chip->dev, "%s(%x) error %d\n", __func__, command, rc);

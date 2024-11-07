@@ -79,6 +79,12 @@ enum tis_defaults {
 #define	TPM_DID_VID(l)			(0x0F00 | ((l) << 12))
 #define	TPM_RID(l)			(0x0F04 | ((l) << 12))
 
+#ifdef TPM_COMPLIANCE_TEST
+#define TPM_HASH_END	(0x4020)
+#define TPM_HASH_DATA	(0x4024)
+#define TPM_HASH_START	(0x4028)
+#endif
+
 #define LPC_CNTRL_OFFSET		0x84
 #define LPC_CLKRUN_EN			(1 << 2)
 #define INTEL_LEGACY_BLK_BASE_ADDR	0xFED08000
@@ -112,6 +118,9 @@ struct tpm_tis_data {
 	unsigned short rng_quality;
 	unsigned int timeout_min; /* usecs */
 	unsigned int timeout_max; /* usecs */
+#ifdef TPM_COMPLIANCE_TEST
+	u8 tpm_hash_in_progress;
+#endif
 };
 
 /*
