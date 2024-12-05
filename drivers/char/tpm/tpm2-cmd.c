@@ -48,7 +48,7 @@ int tpm2_get_timeouts(struct tpm_chip *chip)
 
 #ifdef TPM_COMPLIANCE_TEST
 	/* Longer timeout for self tests on emulator */
-	chip->duration[TPM_LONGER] = msecs_to_jiffies(4000);
+	chip->duration[TPM_LONGER] = msecs_to_jiffies(TPM2_DURATION_LONGER);
 #endif
 	chip->flags |= TPM_CHIP_FLAG_HAVE_TIMEOUTS;
 
