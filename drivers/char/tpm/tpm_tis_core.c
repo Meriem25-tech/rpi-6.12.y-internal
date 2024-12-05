@@ -612,6 +612,8 @@ static int tpm_tis_send(struct tpm_chip *chip, u8 *buf, size_t bufsiz,
 			size_t len)
 {
 	int rc, irq;
+	u32 ordinal;
+	unsigned long dur;
 	struct tpm_tis_data *priv = dev_get_drvdata(&chip->dev);
 
 	if (!(chip->flags & TPM_CHIP_FLAG_IRQ) ||
@@ -625,8 +627,14 @@ static int tpm_tis_send(struct tpm_chip *chip, u8 *buf, size_t bufsiz,
 	rc = tpm_tis_send_main(chip, buf, len);
 	priv->irq = irq;
 	chip->flags |= TPM_CHIP_FLAG_IRQ;
-	if (!test_bit(TPM_TIS_IRQ_TESTED, &priv->flags))
+
+	ordinal = be32_to_cpu(*((__be32 *) (buf + 6)));
+	dur = jiffies_to_msecs(tpm_calc_ordinal_duration(chip, ordinal));
+	while (dur > 0 && !test_bit(TPM_TIS_IRQ_TESTED, &priv->flags))
+	{
 		tpm_msleep(1);
+		dur--;
+	}
 	if (!test_bit(TPM_TIS_IRQ_TESTED, &priv->flags))
 		tpm_tis_disable_interrupts(chip);
 	set_bit(TPM_TIS_IRQ_TESTED, &priv->flags);

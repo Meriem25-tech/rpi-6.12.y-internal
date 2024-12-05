@@ -233,8 +233,11 @@ ssize_t tpm_transmit(struct tpm_chip *chip, u8 *buf, size_t bufsiz)
 		 */
 		if (rc == TPM2_RC_TESTING && cc == TPM2_CC_SELF_TEST)
 			break;
-
+#ifdef TPM_COMPLIANCE_TEST
+		if (delay_msec > TPM2_DURATION_LONGER) {
+#else
 		if (delay_msec > TPM2_DURATION_LONG) {
+#endif
 			if (rc == TPM2_RC_RETRY)
 				dev_err(&chip->dev, "in retry loop\n");
 			else

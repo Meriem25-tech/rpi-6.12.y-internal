@@ -35,7 +35,6 @@ int tpm2_get_timeouts(struct tpm_chip *chip)
 	chip->timeout_b = msecs_to_jiffies(TPM2_TIMEOUT_B);
 	chip->timeout_c = msecs_to_jiffies(TPM2_TIMEOUT_C);
 	chip->timeout_d = msecs_to_jiffies(TPM2_TIMEOUT_D);
-
 	chip->flags |= TPM_CHIP_FLAG_HAVE_TIMEOUTS;
 	return 0;
 }
