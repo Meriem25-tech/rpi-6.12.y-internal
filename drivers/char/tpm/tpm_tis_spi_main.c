@@ -81,8 +81,11 @@ static int tpm_tis_spi_flow_control(struct tpm_tis_spi_phy *phy,
 #endif
 		}
 
-		if (i == TPM_RETRY)
+		if (i >= max_loop)
+		{
+			dev_err(&phy->priv.chip->dev, "i == %d return -ETIMEDOUT - drtm %u\n", i, phy->priv.tpm_hash_in_progress);
 			return -ETIMEDOUT;
+		}
 	}
 
 	return 0;
