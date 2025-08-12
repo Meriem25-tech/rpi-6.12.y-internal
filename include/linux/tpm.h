@@ -248,7 +248,7 @@ enum tpm2_timeouts {
 	TPM2_DURATION_MEDIUM    =    750,
 	TPM2_DURATION_LONG      =   2000,
 #ifdef TPM_COMPLIANCE_TEST
-	TPM2_DURATION_LONGER    =   4000, // Longer timeout for self tests on emulator
+	TPM2_DURATION_LONGER    =   6000, // Longer timeout for self tests on emulator
 #endif
 	TPM2_DURATION_LONG_LONG = 300000,
 	TPM2_DURATION_DEFAULT   = 120000,
