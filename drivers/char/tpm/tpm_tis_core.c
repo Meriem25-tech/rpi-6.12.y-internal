@@ -1239,6 +1239,7 @@ int tpm_tis_core_init(struct device *dev, struct tpm_tis_data *priv, int irq,
 	u8 rid;
 	int rc, probe;
 	struct tpm_chip *chip;
+	u32 mult;
 
 	chip = tpmm_chip_alloc(dev, &tpm_tis);
 	if (IS_ERR(chip))
@@ -1264,6 +1265,18 @@ int tpm_tis_core_init(struct device *dev, struct tpm_tis_data *priv, int irq,
 	INIT_WORK(&priv->free_irq_work, tpm_tis_free_irq_func);
 #ifdef TPM_COMPLIANCE_TEST
 	priv->tpm_hash_in_progress = 0;
+
+	/* Get the custom timeout paramter */
+	if (!device_property_read_u32(dev, "sealsq,timeout-mult", &mult))
+	{
+		chip->timeout_mult = mult ? mult : 1;
+		dev_info(dev, "Overlay timeout_mult=%u\n", chip->timeout_mult);
+	}
+	else
+	{
+		chip->timeout_mult = 2;
+		dev_info(dev, "Default timeout_mult=%u\n", chip->timeout_mult);
+	}
 #endif
 
 	dev_set_drvdata(&chip->dev, priv);

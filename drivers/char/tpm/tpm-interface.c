@@ -52,7 +52,13 @@ MODULE_PARM_DESC(suspend_pcr,
 unsigned long tpm_calc_ordinal_duration(struct tpm_chip *chip, u32 ordinal)
 {
 	if (chip->flags & TPM_CHIP_FLAG_TPM2)
-		return tpm2_calc_ordinal_duration(ordinal);
+	{
+		unsigned long duration = tpm2_calc_ordinal_duration(ordinal);
+#ifdef TPM_COMPLIANCE_TEST
+		duration *= chip->timeout_mult ? chip->timeout_mult : 1;
+#endif
+		return duration;
+	}
 	else
 		return tpm1_calc_ordinal_duration(chip, ordinal);
 }
@@ -234,7 +240,7 @@ ssize_t tpm_transmit(struct tpm_chip *chip, u8 *buf, size_t bufsiz)
 		if (rc == TPM2_RC_TESTING && cc == TPM2_CC_SELF_TEST)
 			break;
 #ifdef TPM_COMPLIANCE_TEST
-		if (delay_msec > TPM2_DURATION_LONGER) {
+		if (delay_msec > (TPM2_DURATION_LONGER * chip->timeout_mult)) {
 #else
 		if (delay_msec > TPM2_DURATION_LONG) {
 #endif

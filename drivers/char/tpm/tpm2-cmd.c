@@ -447,6 +447,7 @@ static int tpm2_do_selftest(struct tpm_chip *chip)
 		rc = tpm_transmit_cmd(chip, &buf, 0,
 				      "attempting the self test");
 		tpm_buf_destroy(&buf);
+		dev_info(&chip->dev,"self test full %d: %d\n", full, rc);
 
 		if (rc == TPM2_RC_TESTING)
 			rc = TPM2_RC_SUCCESS;
