@@ -10,6 +10,12 @@ This repository contains changes in the TPM driver in order to make some tests o
   - TPM_TCC_LOCALITY_2 0x0202 Switch to locality 2
   - TPM_TCC_LOCALITY_3 0x0203 Switch to locality 3
   - TPM_TCC_LOCALITY_4 0x0204 Switch to locality 4
+  - TPM_TCC_HASH_START 0x0300 Writes to TPM_HASH_START
+  - TPM_TCC_HASH_DATA  0x0301 Writes command data to TPM_HASH_DATA (FIFO)
+  - TPM_TCC_HASH_END   0x0302 Writes to TPM_HASH_END
+- Timeout multiplicator, add 'sealsq,timeout-mult = <x>;' in the tpm0 section of the overlay file
+  Useful when using the emulator, put 2 or 3 depending on the version.
+  Default multiplicator is 2
 
 Note: When powered-up, the I2C TPM uses the locality 0 instead of a previously selected one
 

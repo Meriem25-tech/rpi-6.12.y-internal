@@ -225,6 +225,8 @@ struct tpm_chip {
 	struct tpm2_auth *auth;
 #endif 
 #ifdef TPM_COMPLIANCE_TEST
+	/* device-tree-configured multiplier for timeouts */
+	u32 timeout_mult;
 	/* locality to use, set by test commands */
 	int test_locality;
 	/* power up flag, to re-enable the IRQ*/
@@ -248,7 +250,7 @@ enum tpm2_timeouts {
 	TPM2_DURATION_MEDIUM    =    750,
 	TPM2_DURATION_LONG      =   2000,
 #ifdef TPM_COMPLIANCE_TEST
-	TPM2_DURATION_LONGER    =   6000, // Longer timeout for self tests on emulator
+	TPM2_DURATION_LONGER    =   3000, // Longer timeout for self tests
 #endif
 	TPM2_DURATION_LONG_LONG = 300000,
 	TPM2_DURATION_DEFAULT   = 120000,

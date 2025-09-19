@@ -84,7 +84,7 @@ static u8 tpm2_ordinal_duration_index(u32 ordinal)
 
 	case TPM2_CC_SELF_TEST:               /* 143 */
 #ifdef TPM_COMPLIANCE_TEST
-		printk(KERN_WARNING "Longer Self-Tests timeout (4s) for TPM emulator");
+		printk(KERN_WARNING "Longer Self-Tests timeout (2->3s)");
 		return TPM_LONGER;
 #else
 		return TPM_LONG;
@@ -144,13 +144,17 @@ static u8 tpm2_ordinal_duration_index(u32 ordinal)
 unsigned long tpm2_calc_ordinal_duration(struct tpm_chip *chip, u32 ordinal)
 {
 	unsigned int index;
+	u32 mult = 1;
+#ifdef TPM_COMPLIANCE_TEST
+	mult = chip->timeout_mult ? chip->timeout_mult : 1;
+#endif
 
 	index = tpm2_ordinal_duration_index(ordinal);
 
 	if (index != TPM_UNDEFINED)
-		return chip->duration[index];
+		return chip->duration[index] * mult;
 	else
-		return msecs_to_jiffies(TPM2_DURATION_DEFAULT);
+		return msecs_to_jiffies(TPM2_DURATION_DEFAULT)* mult;
 }
 
 
@@ -522,6 +526,7 @@ static int tpm2_do_selftest(struct tpm_chip *chip)
 		rc = tpm_transmit_cmd(chip, &buf, 0,
 				      "attempting the self test");
 		tpm_buf_destroy(&buf);
+		dev_info(&chip->dev,"self test full %d: %d\n", full, rc);
 
 		if (rc == TPM2_RC_TESTING)
 			rc = TPM2_RC_SUCCESS;
